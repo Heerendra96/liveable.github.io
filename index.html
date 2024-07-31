@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Location Finder with Isochrone</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <style>
+        #map {
+            height: 600px;
+            width: 100%;
+        }
+        #locationList {
+            margin-top: 20px;
+        }
+        #legend {
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            font-size: 14px;
+            line-height: 18px;
+            color: #555;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+        }
+        .legend-item input {
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Find Locations Within 15 Minutes of Walking</h2>
+    <form id="locationForm">
+        <label for="latitude">Latitude:</label>
+        <input type="text" id="latitude" name="latitude" required>
+        <label for="longitude">Longitude:</label>
+        <input type="text" id="longitude" name="longitude" required>
+        <button type="submit">Find Locations</button>
+    </form>
+    <div id="map"></div>
+    <div id="locationList"></div>
+    <div id="legend">
+        <div class="legend-item">
+            <input type="checkbox" id="toggleRestaurants" checked>
+            <label for="toggleRestaurants">Restaurants</label>
+        </div>
+        <div class="legend-item">
+            <input type="checkbox" id="toggleSchools" checked>
+            <label for="toggleSchools">Schools</label>
+        </div>
+        <div class="legend-item">
+            <input type="checkbox" id="toggleHospitals" checked>
+            <label for="toggleHospitals">Hospitals</label>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+    <script>
+        document.getElementById('locationForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const latitude = parseFloat(document.getElementById('latitude').value);
+            const longitude = parseFloat(document.getElementById('longitude').value);
+            findLocations(latitude, longitude);
+        });
+
+        let restaurantMarkers = [];
+        let schoolMarkers = [];
+        let hospitalMarkers = [];
+
+        function findLocations(lat, lon) {
+            const radius = 1200; // Radius in meters (15 minutes walking distance)
+            const queries = [
+                `[out:json];node(around:${radius}, ${lat}, ${lon})["amenity"="restaurant"];out body;`,
+                `[out:json];node(around:${radius}, ${lat}, ${lon})["amenity"="school"];out body;`,
+                `[out:json];node(around:${radius}, ${lat}, ${lon})["amenity"="hospital"];out body;`
+            ];
+
+            const map = L.map('map').setView([lat, lon], 15);
+
+            // Use CartoDB Positron (light grey) tile layer
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            }).addTo(map);
+
+            const currentLocationIcon = L.icon({
+                iconUrl: 'https://leafletjs.com/examples/custom-icons/leaf-green.png',
+                iconSize: [38, 95],
+                iconAnchor: [22, 94],
+                popupAnchor: [-3, -76],
+                shadowUrl: 'https://leafletjs.com/examples/custom-icons/leaf-shadow.png',
+                shadowSize: [50, 64],
+                shadowAnchor: [4, 62]
+            });
+
+            const restaurantIcon = L.icon({
+                iconUrl: 'https://leafletjs.com/examples/custom-icons/leaf-red.png',
+                iconSize: [38, 95],
+                iconAnchor: [22, 94],
+                popupAnchor: [-3, -76],
+                shadowUrl: 'https://leafletjs.com/examples/custom-icons/leaf-shadow.png',
+                shadowSize: [50, 64],
+                shadowAnchor: [4, 62]
+            });
+
+            const schoolIcon = L.icon({
+                iconUrl: 'https://leafletjs.com/examples/custom-icons/leaf-orange.png',
+                iconSize: [38, 95],
+                iconAnchor: [22, 94],
+                popupAnchor: [-3, -76],
+                shadowUrl: 'https://leafletjs.com/examples/custom-icons/leaf-shadow.png',
+                shadowSize: [50, 64],
+                shadowAnchor: [4, 62]
+            });
+
+            const hospitalIcon = L.icon({
+                iconUrl: 'https://leafletjs.com/examples/custom-icons/leaf-yellow.png',
+                iconSize: [38, 95],
+                iconAnchor: [22, 94],
+                popupAnchor: [-3, -76],
+                shadowUrl: 'https://leafletjs.com/examples/custom-icons/leaf-shadow.png',
+                shadowSize: [50, 64],
+                shadowAnchor: [4, 62]
+            });
+
+            L.marker([lat, lon], { icon: currentLocationIcon }).addTo(map)
+                .bindPopup('Current Location')
+                .openPopup();
+
+            const locationList = document.getElementById('locationList');
+            locationList.innerHTML = '<h3>Locations:</h3><ul></ul>';
+            const ul = locationList.querySelector('ul');
+
+            queries.forEach((query, index) => {
+                fetch('https://overpass-api.de/api/interpreter', {
+                    method: 'POST',
+                    body: query
+                })
+                .then(response => response.json())
+                .then(data => {
+                    data.elements.forEach(element => {
+                        const locationLat = element.lat;
+                        const locationLon = element.lon;
+                        const locationName = element.tags.name || "Unknown Location";
+                        const distance = (L.latLng(lat, lon).distanceTo(L.latLng(locationLat, locationLon)) / 1000).toFixed(2);
+
+                        const li = document.createElement('li');
+                        li.textContent = `${locationName} - ${distance} km`;
+                        ul.appendChild(li);
+
+                        let icon, markerArray;
+                        if (index === 0) {
+                            icon = restaurantIcon;
+                            markerArray = restaurantMarkers;
+                        } else if (index === 1) {
+                            icon = schoolIcon;
+                            markerArray = schoolMarkers;
+                        } else if (index === 2) {
+                            icon = hospitalIcon;
+                            markerArray = hospitalMarkers;
+                        }
+
+                        const marker = L.marker([locationLat, locationLon], { icon }).addTo(map)
+                            .bindPopup(`${locationName} - ${distance} km`);
+                        markerArray.push(marker);
+
+                        L.Routing.control({
+                            waypoints: [
+                                L.latLng(lat, lon),
+                                L.latLng(locationLat, locationLon)
+                            ],
+                            createMarker: function() { return null; },
+                            addWaypoints: false
+                        }).addTo(map);
+                    });
+                })
+                .catch(error => console.error('Error fetching data:', error));
+            });
+
+            // Fetch isochrone data from OpenRouteService
+            fetch('https://api.openrouteservice.org/v2/isochrones/foot-walking', {
+                method: 'POST',
+                headers: {
+                    'Authorization': '5b3ce3597851110001cf624851c9b3750ebe4269b7de0cc858e1ee9f',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    locations: [[lon, lat]],
+                    range: [900] // 15 minutes (900 seconds)
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const isochrone = L.geoJSON(data, {
+                    style: function() {
+                        return { color: '#ff7800', weight: 2 };
+                    }
+                }).addTo(map);
+            })
+            .catch(error => console.error('Error fetching isochrone data:', error));
+        }
+
+        document.getElementById('toggleRestaurants').addEventListener('change', function() {
+            toggleMarkers(restaurantMarkers, this.checked);
+        });
+
+        document.getElementById('toggleSchools').addEventListener('change', function() {
+            toggleMarkers(schoolMarkers, this.checked);
+        });
+
+        document.getElementById('toggleHospitals').addEventListener('change', function() {
+            toggleMarkers(hospitalMarkers, this.checked);
+        });
+
+        function toggleMarkers(markers, show) {
+            markers.forEach(marker => {
+                if (show) {
+                    map.addLayer(marker);
+                } else {
+                    map.removeLayer(marker);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
